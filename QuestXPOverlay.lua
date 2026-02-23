@@ -15,7 +15,7 @@ local overlayTexture
 local QueueUpdate
 
 local function EnsureOverlay()
-    if overlayFrame and overlayTexture and overlayFrame:GetParent() == MainMenuExpBar then
+    if overlayFrame and overlayTexture then
         return true
     end
 
@@ -23,18 +23,18 @@ local function EnsureOverlay()
         return false
     end
 
-    -- Important: use a dedicated child frame with higher frame level.
-    -- Some Classic/TBC clients draw StatusBar regions in a way where a raw texture on the bar is not visible.
-    overlayFrame = CreateFrame("Frame", "QuestXPOverlayFrame", MainMenuExpBar)
-    overlayFrame:SetFrameStrata(MainMenuExpBar:GetFrameStrata())
-    overlayFrame:SetFrameLevel(MainMenuExpBar:GetFrameLevel() + 10)
+    -- Render on UIParent with very high strata to avoid being masked by internal bar regions on Anniversary clients.
+    overlayFrame = CreateFrame("Frame", "QuestXPOverlayFrame", UIParent)
+    overlayFrame:SetFrameStrata("TOOLTIP")
+    overlayFrame:SetFrameLevel(1)
+    overlayFrame:EnableMouse(false)
     overlayFrame:Hide()
 
-    overlayTexture = overlayFrame:CreateTexture(nil, "ARTWORK")
+    overlayTexture = overlayFrame:CreateTexture(nil, "OVERLAY")
     overlayTexture:SetAllPoints(overlayFrame)
     overlayTexture:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    overlayTexture:SetVertexColor(0.15, 0.75, 1.0, 0.60) -- visible semi-transparent cyan/blue
-    overlayTexture:SetBlendMode("ADD")
+    overlayTexture:SetVertexColor(0.10, 0.65, 1.0, 0.85) -- brighter for diagnostics/visibility
+    overlayTexture:SetBlendMode("BLEND")
 
     MainMenuExpBar:HookScript("OnSizeChanged", function()
         QueueUpdate()
@@ -48,7 +48,6 @@ local function IsXPAvailable(maxXP)
         return false
     end
 
-    -- Compatible cap check for Classic/TBC variants.
     local level = UnitLevel("player")
     local maxLevel = MAX_PLAYER_LEVEL_TABLE and MAX_PLAYER_LEVEL_TABLE[GetAccountExpansionLevel() or 0]
     if level and maxLevel and level >= maxLevel then
@@ -67,7 +66,6 @@ local function ComputePotentialQuestXP()
         return 0, 0
     end
 
-    -- Preserve selected quest when possible (Classic/TBC API by quest log index).
     local previousSelection = GetQuestLogSelection and GetQuestLogSelection() or nil
 
     for i = 1, numEntries do
@@ -133,7 +131,7 @@ local function UpdateOverlay()
         return
     end
 
-    -- Small vertical inset so the overlay sits inside the XP bar border.
+    -- Anchor directly to MainMenuExpBar coordinates but keep frame parent as UIParent for reliable layering.
     overlayFrame:ClearAllPoints()
     overlayFrame:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, -1)
     overlayFrame:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 1)
@@ -157,15 +155,18 @@ local function PrintDebug()
     local currentXP = UnitXP("player") or 0
     local maxXP = UnitXPMax("player") or 0
 
-    -- Recompute for fresh debug output.
     local potentialXP, completedCount = ComputePotentialQuestXP()
     state.potentialXP = potentialXP
     state.completedCount = completedCount
+
+    local barWidth = MainMenuExpBar and MainMenuExpBar:GetWidth() or -1
+    local barHeight = MainMenuExpBar and MainMenuExpBar:GetHeight() or -1
 
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] current XP: " .. currentXP)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] max XP: " .. maxXP)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] potential quest XP: " .. potentialXP)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] completed quests counted: " .. completedCount)
+    DEFAULT_CHAT_FRAME:AddMessage("[QXP] bar size: " .. barWidth .. " x " .. barHeight)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
 
     QueueUpdate()
