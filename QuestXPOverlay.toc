@@ -1,0 +1,7 @@
+## Interface: 20504
+## Title: QuestXPOverlay
+## Notes: Shows potential XP from completed quests on the XP bar.
+## Author: Codex
+## Version: 1.0.0
+
+QuestXPOverlay.lua
