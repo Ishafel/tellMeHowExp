@@ -1,5 +1,5 @@
 -- QuestXPOverlay
--- Classic/TBC compatible addon that overlays potential quest turn-in XP on MainMenuExpBar.
+-- Classic/TBC-compatible addon that overlays potential quest turn-in XP on MainMenuExpBar.
 
 local addonFrame = CreateFrame("Frame")
 
@@ -9,10 +9,11 @@ local state = {
     completedCount = 0,
 }
 
-local overlay
+local overlayTexture
+local QueueUpdate
 
 local function EnsureOverlay()
-    if overlay and overlay:GetParent() == MainMenuExpBar then
+    if overlayTexture and overlayTexture:GetParent() == MainMenuExpBar then
         return true
     end
 
@@ -20,20 +21,15 @@ local function EnsureOverlay()
         return false
     end
 
-    overlay = CreateFrame("StatusBar", "QuestXPOverlayBar", MainMenuExpBar)
-    overlay:SetMinMaxValues(0, 1)
-    overlay:SetValue(1)
-    overlay:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    overlay:SetStatusBarColor(0.2, 0.6, 1.0, 0.45) -- semi-transparent blue
+    -- Use a plain texture instead of a nested StatusBar for maximum compatibility with Classic/TBC XP bar internals.
+    overlayTexture = MainMenuExpBar:CreateTexture("QuestXPOverlayTexture", "OVERLAY", nil, 1)
+    overlayTexture:SetColorTexture(0.2, 0.6, 1.0, 0.45) -- semi-transparent blue
+    overlayTexture:Hide()
 
-    overlay:SetFrameStrata(MainMenuExpBar:GetFrameStrata())
-    overlay:SetFrameLevel(MainMenuExpBar:GetFrameLevel() + 2)
-
-    overlay:ClearAllPoints()
-    overlay:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", 0, 0)
-    overlay:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", 0, 0)
-    overlay:SetWidth(0)
-    overlay:Hide()
+    -- Keep the overlay aligned if XP bar size changes (UI scale, resolution, edit mode style movement).
+    MainMenuExpBar:HookScript("OnSizeChanged", function()
+        QueueUpdate()
+    end)
 
     return true
 end
@@ -43,7 +39,7 @@ local function IsXPAvailable(maxXP)
         return false
     end
 
-    -- Most compatible check across Classic/TBC variants: if UnitLevel returns nil, treat as XP available.
+    -- Most compatible check across Classic/TBC variants.
     local level = UnitLevel("player")
     local maxLevel = MAX_PLAYER_LEVEL_TABLE and MAX_PLAYER_LEVEL_TABLE[GetAccountExpansionLevel() or 0]
     if level and maxLevel and level >= maxLevel then
@@ -98,34 +94,34 @@ local function UpdateOverlay()
     state.completedCount = completedCount
 
     if potentialXP <= 0 or not IsXPAvailable(maxXP) then
-        overlay:Hide()
+        overlayTexture:Hide()
         return
     end
 
     local barWidth = MainMenuExpBar:GetWidth() or 0
-    if barWidth <= 0 then
-        overlay:Hide()
+    local barHeight = MainMenuExpBar:GetHeight() or 0
+    if barWidth <= 0 or barHeight <= 0 then
+        overlayTexture:Hide()
         return
     end
 
     local currentRatio = currentXP / maxXP
     local endRatio = math.min(1, (currentXP + potentialXP) / maxXP)
     local widthRatio = math.max(0, endRatio - currentRatio)
-    local overlayWidth = barWidth * widthRatio
 
-    if overlayWidth <= 0 then
-        overlay:Hide()
+    if widthRatio <= 0 then
+        overlayTexture:Hide()
         return
     end
 
-    overlay:ClearAllPoints()
-    overlay:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, 0)
-    overlay:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 0)
-    overlay:SetWidth(overlayWidth)
-    overlay:Show()
+    overlayTexture:ClearAllPoints()
+    overlayTexture:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, 0)
+    overlayTexture:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 0)
+    overlayTexture:SetWidth(barWidth * widthRatio)
+    overlayTexture:Show()
 end
 
-local function QueueUpdate()
+QueueUpdate = function()
     if state.pendingUpdate then
         return
     end
