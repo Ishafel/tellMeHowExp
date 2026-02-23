@@ -7,13 +7,15 @@ local state = {
     pendingUpdate = false,
     potentialXP = 0,
     completedCount = 0,
+    forceTest = false,
 }
 
+local overlayFrame
 local overlayTexture
 local QueueUpdate
 
 local function EnsureOverlay()
-    if overlayTexture and overlayTexture:GetParent() == MainMenuExpBar then
+    if overlayFrame and overlayTexture and overlayFrame:GetParent() == MainMenuExpBar then
         return true
     end
 
@@ -21,12 +23,19 @@ local function EnsureOverlay()
         return false
     end
 
-    -- Use a plain texture instead of a nested StatusBar for maximum compatibility with Classic/TBC XP bar internals.
-    overlayTexture = MainMenuExpBar:CreateTexture("QuestXPOverlayTexture", "OVERLAY", nil, 1)
-    overlayTexture:SetColorTexture(0.2, 0.6, 1.0, 0.45) -- semi-transparent blue
-    overlayTexture:Hide()
+    -- Important: use a dedicated child frame with higher frame level.
+    -- Some Classic/TBC clients draw StatusBar regions in a way where a raw texture on the bar is not visible.
+    overlayFrame = CreateFrame("Frame", "QuestXPOverlayFrame", MainMenuExpBar)
+    overlayFrame:SetFrameStrata(MainMenuExpBar:GetFrameStrata())
+    overlayFrame:SetFrameLevel(MainMenuExpBar:GetFrameLevel() + 10)
+    overlayFrame:Hide()
 
-    -- Keep the overlay aligned if XP bar size changes (UI scale, resolution, edit mode style movement).
+    overlayTexture = overlayFrame:CreateTexture(nil, "ARTWORK")
+    overlayTexture:SetAllPoints(overlayFrame)
+    overlayTexture:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    overlayTexture:SetVertexColor(0.15, 0.75, 1.0, 0.60) -- visible semi-transparent cyan/blue
+    overlayTexture:SetBlendMode("ADD")
+
     MainMenuExpBar:HookScript("OnSizeChanged", function()
         QueueUpdate()
     end)
@@ -39,7 +48,7 @@ local function IsXPAvailable(maxXP)
         return false
     end
 
-    -- Most compatible check across Classic/TBC variants.
+    -- Compatible cap check for Classic/TBC variants.
     local level = UnitLevel("player")
     local maxLevel = MAX_PLAYER_LEVEL_TABLE and MAX_PLAYER_LEVEL_TABLE[GetAccountExpansionLevel() or 0]
     if level and maxLevel and level >= maxLevel then
@@ -81,6 +90,12 @@ local function ComputePotentialQuestXP()
     return totalXP, completed
 end
 
+local function HideOverlay()
+    if overlayFrame then
+        overlayFrame:Hide()
+    end
+end
+
 local function UpdateOverlay()
     if not EnsureOverlay() then
         return
@@ -93,15 +108,19 @@ local function UpdateOverlay()
     state.potentialXP = potentialXP
     state.completedCount = completedCount
 
+    if state.forceTest then
+        potentialXP = maxXP
+    end
+
     if potentialXP <= 0 or not IsXPAvailable(maxXP) then
-        overlayTexture:Hide()
+        HideOverlay()
         return
     end
 
     local barWidth = MainMenuExpBar:GetWidth() or 0
     local barHeight = MainMenuExpBar:GetHeight() or 0
     if barWidth <= 0 or barHeight <= 0 then
-        overlayTexture:Hide()
+        HideOverlay()
         return
     end
 
@@ -110,15 +129,16 @@ local function UpdateOverlay()
     local widthRatio = math.max(0, endRatio - currentRatio)
 
     if widthRatio <= 0 then
-        overlayTexture:Hide()
+        HideOverlay()
         return
     end
 
-    overlayTexture:ClearAllPoints()
-    overlayTexture:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, 0)
-    overlayTexture:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 0)
-    overlayTexture:SetWidth(barWidth * widthRatio)
-    overlayTexture:Show()
+    -- Small vertical inset so the overlay sits inside the XP bar border.
+    overlayFrame:ClearAllPoints()
+    overlayFrame:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, -1)
+    overlayFrame:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 1)
+    overlayFrame:SetWidth(barWidth * widthRatio)
+    overlayFrame:Show()
 end
 
 QueueUpdate = function()
@@ -146,6 +166,7 @@ local function PrintDebug()
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] max XP: " .. maxXP)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] potential quest XP: " .. potentialXP)
     DEFAULT_CHAT_FRAME:AddMessage("[QXP] completed quests counted: " .. completedCount)
+    DEFAULT_CHAT_FRAME:AddMessage("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
 
     QueueUpdate()
 end
@@ -176,6 +197,13 @@ SlashCmdList.QUESTXPOVERLAY = function(msg)
     if cmd == "update" then
         QueueUpdate()
         DEFAULT_CHAT_FRAME:AddMessage("[QXP] overlay update queued.")
+        return
+    end
+
+    if cmd == "test" then
+        state.forceTest = not state.forceTest
+        DEFAULT_CHAT_FRAME:AddMessage("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
+        QueueUpdate()
         return
     end
 
