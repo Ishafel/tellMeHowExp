@@ -14,6 +14,12 @@ local overlayFrame
 local overlayTexture
 local QueueUpdate
 
+local function Chat(msg)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(msg)
+    end
+end
+
 local function EnsureOverlay()
     if overlayFrame and overlayTexture then
         return true
@@ -23,7 +29,7 @@ local function EnsureOverlay()
         return false
     end
 
-    -- Render on UIParent with very high strata to avoid being masked by internal bar regions on Anniversary clients.
+    -- Draw above the standard XP bar stack for Anniversary/Classic compatibility.
     overlayFrame = CreateFrame("Frame", "QuestXPOverlayFrame", UIParent)
     overlayFrame:SetFrameStrata("TOOLTIP")
     overlayFrame:SetFrameLevel(1)
@@ -33,7 +39,7 @@ local function EnsureOverlay()
     overlayTexture = overlayFrame:CreateTexture(nil, "OVERLAY")
     overlayTexture:SetAllPoints(overlayFrame)
     overlayTexture:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    overlayTexture:SetVertexColor(0.10, 0.65, 1.0, 0.85) -- brighter for diagnostics/visibility
+    overlayTexture:SetVertexColor(0.10, 0.65, 1.0, 0.85)
     overlayTexture:SetBlendMode("BLEND")
 
     MainMenuExpBar:HookScript("OnSizeChanged", function()
@@ -44,13 +50,8 @@ local function EnsureOverlay()
 end
 
 local function IsXPAvailable(maxXP)
+    -- Safer for Classic/TBC variants: rely on UnitXPMax; avoid expansion APIs that may be absent.
     if not maxXP or maxXP <= 0 then
-        return false
-    end
-
-    local level = UnitLevel("player")
-    local maxLevel = MAX_PLAYER_LEVEL_TABLE and MAX_PLAYER_LEVEL_TABLE[GetAccountExpansionLevel() or 0]
-    if level and maxLevel and level >= maxLevel then
         return false
     end
 
@@ -131,7 +132,6 @@ local function UpdateOverlay()
         return
     end
 
-    -- Anchor directly to MainMenuExpBar coordinates but keep frame parent as UIParent for reliable layering.
     overlayFrame:ClearAllPoints()
     overlayFrame:SetPoint("TOPLEFT", MainMenuExpBar, "TOPLEFT", barWidth * currentRatio, -1)
     overlayFrame:SetPoint("BOTTOMLEFT", MainMenuExpBar, "BOTTOMLEFT", barWidth * currentRatio, 1)
@@ -162,12 +162,13 @@ local function PrintDebug()
     local barWidth = MainMenuExpBar and MainMenuExpBar:GetWidth() or -1
     local barHeight = MainMenuExpBar and MainMenuExpBar:GetHeight() or -1
 
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] current XP: " .. currentXP)
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] max XP: " .. maxXP)
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] potential quest XP: " .. potentialXP)
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] completed quests counted: " .. completedCount)
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] bar size: " .. barWidth .. " x " .. barHeight)
-    DEFAULT_CHAT_FRAME:AddMessage("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
+    Chat("[QXP] current XP: " .. currentXP)
+    Chat("[QXP] max XP: " .. maxXP)
+    Chat("[QXP] potential quest XP: " .. potentialXP)
+    Chat("[QXP] completed quests counted: " .. completedCount)
+    Chat("[QXP] bar size: " .. barWidth .. " x " .. barHeight)
+    Chat("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
+    Chat("[QXP] hint: use slash command '/qxp' (with /)")
 
     QueueUpdate()
 end
@@ -193,17 +194,19 @@ addonFrame:RegisterEvent("UPDATE_EXHAUSTION")
 addonFrame:RegisterEvent("PLAYER_LEVEL_UP")
 
 SLASH_QUESTXPOVERLAY1 = "/qxp"
+SLASH_QUESTXPOVERLAY2 = "/questxp"
 SlashCmdList.QUESTXPOVERLAY = function(msg)
     local cmd = msg and strtrim(msg) or ""
+
     if cmd == "update" then
         QueueUpdate()
-        DEFAULT_CHAT_FRAME:AddMessage("[QXP] overlay update queued.")
+        Chat("[QXP] overlay update queued.")
         return
     end
 
     if cmd == "test" then
         state.forceTest = not state.forceTest
-        DEFAULT_CHAT_FRAME:AddMessage("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
+        Chat("[QXP] test mode: " .. (state.forceTest and "ON" or "OFF"))
         QueueUpdate()
         return
     end
